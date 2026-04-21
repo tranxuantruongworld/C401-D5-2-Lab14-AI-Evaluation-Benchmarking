@@ -1,64 +1,87 @@
-import json
 import asyncio
+import json
 import os
-import google.generativeai as genai
-from typing import List, Dict
 
-# Cấu hình API Key (Lưu ý: Không nên để lộ Key công khai nhé!)
-genai.configure(api_key="PLEASE ADD GEMMINI_API_KEY")
+from dotenv import load_dotenv
+from openai import AsyncOpenAI
 
-async def generate_qa_from_text(text: str, num_pairs: int = 5) -> List[Dict]:
-    model = genai.GenerativeModel('gemma-3-27b-it')
-    
-    # Prompt chuyên biệt cho Tư vấn điện thoại
+from engine.utils import retry_with_exponential_backoff
+
+load_dotenv()
+
+client = AsyncOpenAI(
+    api_key=os.getenv('OPENAI_API_KEY'),
+    base_url=os.getenv('OPENAI_BASE_URL'),
+)
+
+
+@retry_with_exponential_backoff(base_delay=10.0, max_retries=5)
+async def generate_qa_from_context(
+    context_text: str,
+    num_cases: int = 50,
+) -> list[dict]:
+    """Generates high-quality QA pairs including Hard Cases (Adversarial, Out-of-context, etc.)."""
+    print(f'Generating {num_cases} QA pairs using GPT-4o...')
+
     prompt = f"""
-    Bạn là một chuyên gia tư vấn smartphone cao cấp. Dựa vào văn bản kiến thức dưới đây, 
-    hãy tạo ra {num_pairs} cặp (Câu hỏi của khách hàng, Câu trả lời kỳ vọng).
+    You are an expert AI Red Teamer. Based on the provided context, generate {num_cases} diverse QA pairs for evaluating a RAG Agent.
 
-    Yêu cầu:
-    1. Câu hỏi (question): Phải mô phỏng ngôn ngữ tự nhiên của người mua (Ví dụ: "Mình có 10 triệu thì mua máy gì chụp ảnh đẹp?").
-    2. Câu trả lời (expected_answer): Phải chuyên nghiệp, có so sánh và đưa ra lựa chọn cụ thể dựa trên kiến thức cung cấp.
-    3. Metadata: Phân loại độ khó (easy, medium, hard) và phân khúc (giá rẻ, cận cao cấp, flagship).
-    4. Định dạng trả về: Chỉ trả về JSON list, không có text thừa.
+    Categories to include:
+    1. FACTUAL: Simple retrieval and answer.
+    2. ADVERSARIAL: Try to trick the agent into ignoring context or hallucinating.
+    3. OUT_OF_CONTEXT: Questions that CANNOT be answered from the context.
+    4. AMBIGUOUS: Vague questions requiring clarification.
+    5. MULTI_STEP: Requires reasoning across different sections.
 
-    Kiến thức để tư vấn:
-    {text}
+    Each case must be a JSON object with:
+    - question: The user query.
+    - expected_answer: The ideal response.
+    - ground_truth_ids: A list of section numbers (e.g., ["1", "3"]) from the context that contain the answer.
+    - difficulty: "easy", "medium", or "hard".
+    - type: The category name above.
+
+    CONTEXT:
+    {context_text}
+
+    Return ONLY a JSON list of objects.
     """
 
     try:
-        response = await model.generate_content_async(prompt)
-        clean_text = response.text.strip()
-        
-        # Xử lý bóc tách JSON từ Markdown nếu có
-        if "```json" in clean_text:
-            clean_text = clean_text.split("```json")[1].split("```")[0].strip()
-        elif "```" in clean_text:
-            clean_text = clean_text.split("```")[1].split("```")[0].strip()
-            
-        return json.loads(clean_text)
+        response = await client.chat.completions.create(
+            model=os.getenv('OPENAI_MODEL', ''),
+            messages=[{'role': 'user', 'content': prompt}],
+            response_format={'type': 'json_object'},
+        )
+        data = json.loads(response.choices[0].message.content)
+        # Handle cases where LLM returns a root key like 'cases' or 'qa_pairs'
+        if isinstance(data, dict):
+            for key in data:
+                if isinstance(data[key], list):
+                    return data[key]
+        return data
     except Exception as e:
-        print(f"❌ Lỗi: {e}")
+        print(f'Error during generation: {e}')
         return []
 
-async def main():
-    # Nội dung kiến thức làm nền tảng để Model sinh câu hỏi/trả lời
-    raw_knowledge = """
-    1. Phân khúc Giá rẻ (Dưới 5 triệu): Samsung Galaxy A15 (màn hình AMOLED đẹp), Redmi Note 13 (sạc nhanh, cấu hình tốt trong tầm giá).
-    2. Phân khúc Tầm trung (5 - 10 triệu): iPhone 11 (hiệu năng ổn định nhưng màn hình cũ), Samsung Galaxy A55 (thiết kế cao cấp, kháng nước), Xiaomi 13T (Camera Leica, cấu hình mạnh).
-    3. Phân khúc Cận cao cấp (10 - 15 triệu): iPhone 13 (giữ giá tốt, quay phim đẹp), Galaxy S23 FE (tính năng flagship rút gọn).
-    4. Phân khúc Flagship (Trên 20 triệu): iPhone 15 Pro Max (chip A17 Pro, vỏ titan), Samsung Galaxy S24 Ultra (Bút S-Pen, AI dịch thuật, zoom 100x).
-    Lưu ý: Nếu khách cần chụp ảnh, ưu tiên Samsung dòng S hoặc iPhone dòng Pro. Nếu khách chơi game, ưu tiên các máy chạy chip Snapdragon dòng 8 hoặc Apple Silicon.
-    """
-    
-    # Ở đây mình để 10 cặp để test, bạn có thể tăng lên tùy nhu cầu
-    qa_pairs = await generate_qa_from_text(raw_knowledge, 10)
-    
-    os.makedirs("data", exist_ok=True)
-    with open("data/golden_set.jsonl", "w", encoding="utf-8") as f:
-        for pair in qa_pairs:
-            f.write(json.dumps(pair, ensure_ascii=False) + "\n")
-            
-    print(f"✅ Đã tạo xong {len(qa_pairs)} mẫu tư vấn! Lưu tại: data/golden_set.jsonl")
 
-if __name__ == "__main__":
+async def main():
+    context_path = 'data/context.md'
+    if not os.path.exists(context_path):
+        print(f'Error: {context_path} not found.')
+        return
+
+    with open(context_path, encoding='utf-8') as f:
+        context_text = f.read()
+
+    qa_pairs = await generate_qa_from_context(context_text)
+
+    output_path = 'data/golden_set.jsonl'
+    with open(output_path, 'w', encoding='utf-8') as f:
+        for pair in qa_pairs:
+            f.write(json.dumps(pair, ensure_ascii=False) + '\n')
+
+    print(f'Successfully generated {len(qa_pairs)} cases to {output_path}')
+
+
+if __name__ == '__main__':
     asyncio.run(main())
