@@ -139,13 +139,13 @@ class MainAgentV2:
         </output_format>
         """)
 
-        try:
-            response = await self.client.chat.completions.create(
-                model='gemini-3.1-flash-lite-preview',
-                messages=[{'role': 'user', 'content': prompt}],
-                response_format={'type': 'json_object'},
-            )
+        response = await self.client.chat.completions.create(
+            model='gemini-3.1-flash-lite-preview',
+            messages=[{'role': 'user', 'content': prompt}],
+            response_format={'type': 'json_object'},
+        )
 
+        try:
             result = json.loads(response.choices[0].message.content)
 
             # Format context with "Trích dẫn" prefix for the evaluator

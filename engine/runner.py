@@ -6,7 +6,6 @@ from tqdm.asyncio import tqdm
 
 from agent.main_agent import MainAgent
 from agent.main_agent_v2 import MainAgentV2
-# from engine.expert_eval import ExpertEvaluator
 from engine.llm_judge import MultiModelJudge
 from engine.retrieval_eval import RetrievalEvaluator
 
@@ -44,7 +43,7 @@ class BenchmarkRunner:
                 question=case['question'],
                 answer=agent_resp['answer'],
                 expected=case['expected_answer'],
-                # context='\n'.join(agent_resp['contexts']),
+                context='\n'.join(agent_resp['contexts']),
             )
 
             latency = time.perf_counter() - start_time

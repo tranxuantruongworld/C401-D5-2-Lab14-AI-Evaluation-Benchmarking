@@ -82,24 +82,20 @@ class MainAgent:
         CÂU TRẢ LỜI:
         """
 
-        try:
-            response = await self.model.chat.completions.create(
-                model='gemini-3.1-flash-lite-preview',
-                messages=[{'role': 'user', 'content': prompt}],
-                response_format={'type': 'json_object'},
-            )
-            return {
-                'answer': response.choices[0].message.content.strip(),
-                'contexts': relevant_docs,
-                'metadata': {
-                    'model': 'gemma-3-27b-it',
-                    'retriever': 'fastembed-bge-small',
-                    'status': 'success',
-                },
-            }
-        except Exception as e:
-            print(f'An error occured: {e}', file=sys.stderr)
-            return {'answer': str(e), 'status': 'failed'}
+        response = await self.model.chat.completions.create(
+            model='gemini-3.1-flash-lite-preview',
+            messages=[{'role': 'user', 'content': prompt}],
+            response_format={'type': 'json_object'},
+        )
+        return {
+            'answer': response.choices[0].message.content.strip(),
+            'contexts': relevant_docs,
+            'metadata': {
+                'model': 'gemma-3-27b-it',
+                'retriever': 'fastembed-bge-small',
+                'status': 'success',
+            },
+        }
 
 
 # --- Chạy thử nghiệm ---
