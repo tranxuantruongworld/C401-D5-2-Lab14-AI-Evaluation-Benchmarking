@@ -62,6 +62,8 @@ async def run_benchmark_with_results(agent_version: int):
             'agreement_rate': sum(r['agreement_rate'] for r in results)
             / total,
             'avg_latency': sum(r['latency'] for r in results) / len(results),
+            'avg_faithfulness': sum(r['faithfulness'] for r in results) / len(results),
+            'avg_relevance': sum(r['relevance'] for r in results) / len(results),
         },
     }
     return results, summary
@@ -78,10 +80,32 @@ async def main():
         return
 
     print('\n📊 --- KẾT QUẢ SO SÁNH (REGRESSION) ---')
-    delta = v2_summary['metrics']['avg_score'] - v1_summary['metrics']['avg_score']
-    print(f'V1 Score: {v1_summary["metrics"]["avg_score"]}')
-    print(f'V2 Score: {v2_summary["metrics"]["avg_score"]}')
-    print(f'Delta: {"+" if delta >= 0 else ""}{delta:.2f}')
+    metrics_v1 = v1_summary['metrics']
+    metrics_v2 = v2_summary['metrics']
+
+    header = f"{'Metric':<20} | {'V1':<10} | {'V2':<10} | {'Delta':<10}"
+    separator = "-" * len(header)
+    print(header)
+    print(separator)
+
+    keys_mapping = [
+        ('avg_score', 'Avg Score'),
+        ('hit_rate', 'Hit Rate'),
+        ('avg_mrr', 'Avg MRR'),
+        ('avg_faithfulness', 'Faithfulness'),
+        ('avg_relevance', 'Relevance'),
+        ('agreement_rate', 'Agreement'),
+        ('avg_latency', 'Latency (s)'),
+    ]
+
+    for key, label in keys_mapping:
+        v1_val = metrics_v1[key]
+        v2_val = metrics_v2[key]
+        delta = v2_val - v1_val
+        print(f"{label:<20} | {v1_val:<10.3f} | {v2_val:<10.3f} | {delta:<+10.3f}")
+
+    print(separator)
+    final_delta = metrics_v2['avg_score'] - metrics_v1['avg_score']
 
     os.makedirs('reports', exist_ok=True)
     with open('reports/summary.json', 'w', encoding='utf-8') as f:
@@ -89,7 +113,7 @@ async def main():
     with open('reports/benchmark_results.json', 'w', encoding='utf-8') as f:
         json.dump(v2_results, f, ensure_ascii=False, indent=2)
 
-    if delta > 0:
+    if final_delta > 0:
         print('✅ QUYẾT ĐỊNH: CHẤP NHẬN BẢN CẬP NHẬT (APPROVE)')
     else:
         print('❌ QUYẾT ĐỊNH: TỪ CHỐI (BLOCK RELEASE)')

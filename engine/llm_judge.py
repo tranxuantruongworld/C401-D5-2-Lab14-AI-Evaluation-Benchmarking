@@ -30,11 +30,11 @@ class MultiModelJudge:
         question: str,
         answer: str,
         expected: str,
-        # context: str,
-    ) -> tuple[int, str]:
+        context: str,
+    ) -> tuple[dict[str, int], str]:
         prompt = f"""
         <instruction>
-        Judge the following ai response on a concrete scale of 1 to 5 for its factual consistency.
+        Judge the following ai response on a concrete scale of 1 to 5 for its factual consistency, relevance and faithfulness to the context.
         </instruction>
 
         <question>
@@ -49,56 +49,64 @@ class MultiModelJudge:
         {expected}
         </expected_answer>
 
+        <context>
+        {context}
+        </context>
+
         <return_format>
         Provide only a raw JSON object. Do not include markdown formatting or any other text.
         Schema:
         ```json
         {{
-            "score": int,
+            "factual_consistency": int,
+            "relevance": int,
+            "faithfulness": int,
             "reason" "short explanation"
         }}
         ```
         </return_format>
         """
-        try:
-            response = await self.client.chat.completions.create(
-                model=model,
-                messages=[{'role': 'user', 'content': prompt}],
-            )
-            content = response.choices[0].message.content.strip()
+        response = await self.client.chat.completions.create(
+            model=model,
+            messages=[{'role': 'user', 'content': prompt}],
+        )
+        content = response.choices[0].message.content.strip()
 
-            # Remove markdown code blocks if present
-            if content.startswith('```'):
-                content = re.sub(
-                    r'^```(?:json)?\n?|\n?```$',
-                    '',
-                    content,
-                    flags=re.MULTILINE,
-                ).strip()
+        # Remove markdown code blocks if present
+        if content.startswith('```'):
+            content = re.sub(
+                r'^```(?:json)?\n?|\n?```$',
+                '',
+                content,
+                flags=re.MULTILINE,
+            ).strip()
 
-            result = json.loads(content)
-            return result['score'], result['reason']
-        except Exception as e:
-            print(f'An error occurred with model {model}: {e}', file=sys.stderr)
-            return 0, 'An error occured'
+        result = json.loads(content)
+        return result, result['reason']
 
     async def evaluate_multi_judge(
         self,
         question: str,
         answer: str,
         expected: str,
-        # context: str,
+        context: str,
     ) -> dict:
         # Run both judges in parallel
         results = await asyncio.gather(
-            self.get_score(self.judge_a_model, question, answer, expected),
-            self.get_score(self.judge_b_model, question, answer, expected),
+            self.get_score(self.judge_a_model, question, answer, expected, context),
+            self.get_score(self.judge_b_model, question, answer, expected, context),
         )
 
-        score1, score2 = results[0][0], results[1][0]
+        score1, score2 = (
+            results[0][0]['factual_consistency'],
+            results[1][0]['factual_consistency'],
+        )
         reason1, reason2 = results[0][1], results[1][1]
 
         final_score = (score1 + score2) / 2
+
+        ff1, ff2 = results[0][0]['faithfulness'], results[1][0]['faithfulness']
+        rv1, rv2 = results[0][0]['relevance'], results[1][0]['relevance']
 
         # 2. Tính toán Độ đồng thuận (Agreement Rate)
         # Công thức: 1 - (khoảng cách điểm / thang điểm tối đa)
@@ -112,4 +120,6 @@ class MultiModelJudge:
             'agreement_rate': round(agreement_rate, 2),
             'individual_scores': {'senior': score1, 'junior': score2},
             'reasoning': combined_reasoning,
+            'faithfulness': (ff1 + ff2) / 2,
+            'relevance': (rv1 + rv2) / 2,
         }
