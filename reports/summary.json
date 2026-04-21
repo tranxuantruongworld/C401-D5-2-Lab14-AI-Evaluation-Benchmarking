@@ -1,14 +1,16 @@
 {
   "metadata": {
+    "version": 2,
     "total": 50,
-    "version": "SupportAgent-v2",
-    "timestamp": "2026-04-21 16:24:30"
+    "timestamp": "2026-04-22 00:20:24"
   },
-    "metrics": {
-    "avg_mrr": 0.7,
-    "hit_rate": 0.7,
-    "avg_score": 4.395,
-    "agreement_rate": 0.96,
-    "avg_latency": 41.00675609360002
+  "metrics": {
+    "avg_mrr": 0.9311904761904762,
+    "avg_score": 4.86,
+    "hit_rate": 0.96,
+    "agreement_rate": 0.9840000000000001,
+    "avg_latency": 36.66737872396021,
+    "avg_faithfulness": 4.76,
+    "avg_relevance": 4.94
   }
 }
