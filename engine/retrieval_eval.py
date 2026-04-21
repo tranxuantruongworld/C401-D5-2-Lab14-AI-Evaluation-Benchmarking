@@ -1,32 +1,63 @@
-from typing import List, Dict
+import re
+
+import numpy as np
+
 
 class RetrievalEvaluator:
-    def __init__(self):
-        pass
+    @staticmethod
+    def extract_ids(agent_resp: dict) -> list[str]:
+        """Extracts chunk IDs from agent response metadata or context strings."""
+        # 1. Try to get from metadata
+        ids = agent_resp.get('metadata', {}).get('chunk_ids', [])
+        if ids:
+            return ids
 
-    def calculate_hit_rate(self, expected_ids: List[str], retrieved_ids: List[str], top_k: int = 3) -> float:
-        """
-        TODO: Tính toán xem ít nhất 1 trong expected_ids có nằm trong top_k của retrieved_ids không.
-        """
-        top_retrieved = retrieved_ids[:top_k]
-        hit = any(doc_id in top_retrieved for doc_id in expected_ids)
-        return 1.0 if hit else 0.0
+        # 2. Try to extract from context strings (e.g., "trích dẫn 1")
+        extracted_ids = []
+        for ctx in agent_resp.get('contexts', []):
+            match = re.search(r'trích dẫn (\d+)', ctx)
+            if match:
+                extracted_ids.append(match.group(1))
 
-    def calculate_mrr(self, expected_ids: List[str], retrieved_ids: List[str]) -> float:
-        """
-        TODO: Tính Mean Reciprocal Rank.
-        Tìm vị trí đầu tiên của một expected_id trong retrieved_ids.
-        MRR = 1 / position (vị trí 1-indexed). Nếu không thấy thì là 0.
-        """
-        for i, doc_id in enumerate(retrieved_ids):
-            if doc_id in expected_ids:
+        return list(
+            dict.fromkeys(extracted_ids)
+        )  # Remove duplicates while preserving order
+
+    @staticmethod
+    def calculate_hit_rate(
+        retrieved_ids: list[str],
+        ground_truth_ids: list[str],
+        k: int = 3,
+    ) -> float:
+        """Calculates if at least one ground truth ID is in the top K retrieved results."""
+        if not ground_truth_ids:
+            return 0.0  # Or 1.0 if we expect nothing to be retrieved
+
+        top_k = retrieved_ids[:k]
+        for gt_id in ground_truth_ids:
+            if gt_id in top_k:
+                return 1.0
+        return 0.0
+
+    @staticmethod
+    def calculate_mrr(retrieved_ids: list[str], ground_truth_ids: list[str]) -> float:
+        """Calculates Mean Reciprocal Rank: 1 / rank of the first relevant document."""
+        if not ground_truth_ids:
+            return 0.0
+
+        for i, retrieved_id in enumerate(retrieved_ids):
+            if retrieved_id in ground_truth_ids:
                 return 1.0 / (i + 1)
         return 0.0
 
-    async def evaluate_batch(self, dataset: List[Dict]) -> Dict:
-        """
-        Chạy eval cho toàn bộ bộ dữ liệu.
-        Dataset cần có trường 'expected_retrieval_ids' và Agent trả về 'retrieved_ids'.
-        """
-        # Placeholder logic
-        return {"avg_hit_rate": 0.85, "avg_mrr": 0.72}
+    def evaluate_batch(
+        self,
+        batch_retrieved: list[list[str]],
+        batch_gt: list[list[str]],
+    ) -> dict:
+        hit_rates = [
+            self.calculate_hit_rate(r, g) for r, g in zip(batch_retrieved, batch_gt, strict=True)
+        ]
+        mrrs = [self.calculate_mrr(r, g) for r, g in zip(batch_retrieved, batch_gt, strict=True)]
+
+        return {'avg_hit_rate': np.mean(hit_rates), 'avg_mrr': np.mean(mrrs)}
