@@ -20,7 +20,7 @@ def retry_with_exponential_backoff(
                 try:
                     return await func(*args, **kwargs)
                 except Exception as e:
-                    if '429' in str(e) or 'RESOURCE_EXHAUSTED' in str(e):
+                    if '429' in str(e) or 'RESOURCE_EXHAUSTED' in str(e) or '503' in str(e):
                         retries += 1
                         if retries > max_retries:
                             print(
