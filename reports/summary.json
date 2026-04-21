@@ -1,0 +1,14 @@
+{
+  "metadata": {
+    "total": 50,
+    "version": "SupportAgent-v2",
+    "timestamp": "2026-04-21 16:24:30"
+  },
+    "metrics": {
+    "avg_mrr": 0.7,
+    "hit_rate": 0.7,
+    "avg_score": 4.395,
+    "agreement_rate": 0.96,
+    "avg_latency": 41.00675609360002
+  }
+}
